@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo Deduplicator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #0e0e0f;
+    color: #e8e4dc;
+    min-height: 100vh;
+    padding: 2rem;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 3rem;
+  }
+
+  .header h1 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 3.2rem;
+    color: #e8e4dc;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .header p {
+    font-size: 0.875rem;
+    color: #6b6862;
+    margin-top: 0.5rem;
+    font-weight: 300;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* ── Drop zone ── */
+  .drop-zone {
+    border: 1.5px dashed #333;
+    border-radius: 16px;
+    padding: 3.5rem 2rem;
+    text-align: center;
+    background: #141415;
+    position: relative;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .drop-zone.drag-over {
+    border-color: #c8a96e;
+    background: #18170f;
+  }
+
+  /* invisible full-cover input for drag-and-drop area */
+  .drop-zone .overlay-input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+  }
+
+  .drop-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 1.25rem;
+    background: #1e1e20;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #2a2a2c;
+  }
+
+  .drop-icon svg { color: #c8a96e; }
+
+  .drop-zone h2 {
+    font-size: 1.25rem;
+    font-weight: 500;
+    color: #d4cfc7;
+    margin-bottom: 0.5rem;
+  }
+
+  .drop-zone .sub {
+    font-size: 0.825rem;
+    color: #555;
+    font-weight: 300;
+    margin-bottom: 1.5rem;
+  }
+
+  /* explicit button inside drop zone */
+  .browse-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #c8a96e;
+    color: #0e0e0f;
+    border: none;
+    padding: 0.65rem 1.5rem;
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    z-index: 3;
+    transition: background 0.15s;
+  }
+
+  .browse-btn:hover { background: #d4b87e; }
+
+  /* hidden real input triggered by the browse button */
+  #folderInput {
+    display: none;
+  }
+
+  /* ── Progress ── */
+  .progress-section { display: none; margin-top: 1.5rem; }
+  .progress-section.visible { display: block; }
+
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+    color: #666;
+  }
+
+  .progress-bar-track {
+    height: 3px;
+    background: #1e1e20;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: #c8a96e;
+    border-radius: 2px;
+    transition: width 0.15s ease;
+    width: 0%;
+  }
+
+  /* ── Stats ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+
+  .stat-card {
+    background: #141415;
+    border: 1px solid #1e1e20;
+    border-radius: 12px;
+    padding: 1.25rem;
+    text-align: center;
+  }
+
+  .stat-card .num {
+    font-family: 'Instrument Serif', serif;
+    font-size: 2.5rem;
+    color: #e8e4dc;
+    line-height: 1;
+  }
+
+  .stat-card .num.danger { color: #e24b4a; }
+  .stat-card .lbl {
+    font-size: 0.75rem;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 0.4rem;
+  }
+
+  /* ── Results ── */
+  .results-section { display: none; margin-top: 2rem; }
+  .results-section.visible { display: block; }
+
+  .results-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #555;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #1e1e20;
+  }
+
+  .group-card {
+    background: #141415;
+    border: 1px solid #1e1e20;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .group-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.8rem;
+    color: #666;
+  }
+
+  .group-badge {
+    background: #1a1208;
+    color: #c8a96e;
+    border: 1px solid #3a2f1a;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+  }
+
+  .photos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+  }
+
+  .photo-thumb {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 1;
+    border: 2px solid transparent;
+  }
+
+  .photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .photo-thumb.kept  { border-color: #3B6D11; }
+  .photo-thumb.deleted { border-color: #a32d2d; opacity: 0.4; }
+
+  .photo-thumb .tag {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    font-size: 9px;
+    font-family: 'DM Mono', monospace;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+
+  .photo-thumb.kept    .tag { background: #3B6D11; color: #C0DD97; }
+  .photo-thumb.deleted .tag { background: #a32d2d; color: #f7c1c1; }
+
+  .photo-name {
+    position: absolute;
+    bottom: 22px;
+    left: 0; right: 0;
+    background: rgba(0,0,0,0.75);
+    font-size: 9px;
+    color: #ccc;
+    text-align: center;
+    padding: 2px 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .photo-thumb:hover .photo-name { opacity: 1; }
+
+  /* ── Actions ── */
+  .actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+    flex-wrap: wrap;
+  }
+
+  button.primary {
+    flex: 1;
+    background: #c8a96e;
+    color: #0e0e0f;
+    border: none;
+    padding: 0.875rem 2rem;
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  button.primary:hover { background: #d4b87e; transform: translateY(-1px); }
+  button.primary:active { transform: translateY(0); }
+  button.primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  button.secondary {
+    background: transparent;
+    color: #888;
+    border: 1px solid #2a2a2c;
+    padding: 0.875rem 1.5rem;
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  button.secondary:hover { border-color: #444; color: #aaa; }
+
+  .note {
+    font-size: 0.775rem;
+    color: #444;
+    margin-top: 0.75rem;
+    font-style: italic;
+  }
+
+  canvas { display: none; }
+
+  .empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+    font-size: 0.875rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Deduplicate</h1>
+  <p>Exact duplicates only · All image formats · Download clean</p>
+</div>
+
+<!-- Drop zone -->
+<div class="drop-zone" id="dropZone">
+  <!-- overlay input catches drag-and-drop (no click, pointer-events handled by button below) -->
+  <input class="overlay-input" type="file" id="overlayInput" webkitdirectory multiple tabindex="-1" />
+
+  <div class="drop-icon">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M3 7C3 5.9 3.9 5 5 5h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+      <path d="M12 11v6M9 14l3-3 3 3"/>
+    </svg>
+  </div>
+
+  <h2>Drop your photo folder here</h2>
+  <p class="sub">Subfolders included · Non-images automatically skipped · Only 100% identical files removed</p>
+
+  <!-- Real button that opens picker -->
+  <button class="browse-btn" id="browseBtn">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 7C3 5.9 3.9 5 5 5h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+    </svg>
+    Browse folder
+  </button>
+
+  <!-- Hidden real file input -->
+  <input type="file" id="folderInput" webkitdirectory multiple />
+</div>
+
+<p class="note">Only byte-identical files are flagged as duplicates. Different file sizes = different files, always kept.</p>
+
+<!-- Progress -->
+<div class="progress-section" id="progressSection">
+  <div class="progress-label">
+    <span id="progressText">Processing…</span>
+    <span id="progressPct">0%</span>
+  </div>
+  <div class="progress-bar-track">
+    <div class="progress-bar-fill" id="progressFill"></div>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="stats-row" id="statsRow" style="display:none">
+  <div class="stat-card">
+    <div class="num" id="statTotal">0</div>
+    <div class="lbl">Photos found</div>
+  </div>
+  <div class="stat-card">
+    <div class="num danger" id="statDups">0</div>
+    <div class="lbl">Exact duplicates removed</div>
+  </div>
+  <div class="stat-card">
+    <div class="num" id="statKept">0</div>
+    <div class="lbl">Unique kept</div>
+  </div>
+</div>
+
+<!-- Results -->
+<div class="results-section" id="resultsSection">
+  <div class="results-title">Duplicate groups — keeping first occurrence of each</div>
+  <div id="groupsContainer"></div>
+</div>
+
+<!-- Actions -->
+<div class="actions" id="actionsBar" style="display:none">
+  <button class="secondary" id="resetBtn">Reset</button>
+  <button class="primary" id="downloadBtn">Download clean folder (.zip)</button>
+</div>
+
+<canvas id="hashCanvas"></canvas>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+// ── Image extensions we accept (very broad) ──────────────────────────────
+const PHOTO_EXTS = new Set([
+  'jpg','jpeg','png','gif','webp','bmp','tiff','tif',
+  'heic','heif','avif','jfif','pjpeg','pjp',
+  'ico','svg','raw','arw','cr2','cr3','nef','nrw',
+  'orf','rw2','raf','dng','pef','srw','x3f','3fr'
+]);
+
+function isPhoto(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  return PHOTO_EXTS.has(ext);
+}
+
+// ── DOM refs ──────────────────────────────────────────────────────────────
+const dropZone        = document.getElementById('dropZone');
+const overlayInput    = document.getElementById('overlayInput');
+const browseBtn       = document.getElementById('browseBtn');
+const folderInput     = document.getElementById('folderInput');
+const progressSection = document.getElementById('progressSection');
+const progressFill    = document.getElementById('progressFill');
+const progressText    = document.getElementById('progressText');
+const progressPct     = document.getElementById('progressPct');
+const statsRow        = document.getElementById('statsRow');
+const resultsSection  = document.getElementById('resultsSection');
+const groupsContainer = document.getElementById('groupsContainer');
+const actionsBar      = document.getElementById('actionsBar');
+const downloadBtn     = document.getElementById('downloadBtn');
+const resetBtn        = document.getElementById('resetBtn');
+
+// ── State ─────────────────────────────────────────────────────────────────
+let allPhotoFiles = [];
+let toDelete      = new Set();   // set of "name|||size" keys
+
+// ── Wiring ────────────────────────────────────────────────────────────────
+
+// Browse button → open hidden input
+browseBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  folderInput.click();
+});
+
+// Real file input change
+folderInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+// Overlay input (drag-and-drop target) change
+overlayInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+// Drag events on drop zone
+dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',      (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  // DataTransfer items may carry directory entries
+  const files = e.dataTransfer.files;
+  if (files.length) handleFiles(files);
+});
+
+// ── Core logic ────────────────────────────────────────────────────────────
+
+function setProgress(pct, text) {
+  progressFill.style.width = pct + '%';
+  progressPct.textContent  = Math.round(pct) + '%';
+  if (text) progressText.textContent = text;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function sha256(file) {
+  const buf    = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function handleFiles(fileList) {
+  const photos = Array.from(fileList).filter(isPhoto);
+
+  if (!photos.length) {
+    alert('No image files found in the selected folder.');
+    return;
+  }
+
+  // Reset UI
+  allPhotoFiles = photos;
+  toDelete      = new Set();
+  groupsContainer.innerHTML = '';
+  resultsSection.classList.remove('visible');
+  actionsBar.style.display = 'none';
+  statsRow.style.display   = 'grid';
+  progressSection.classList.add('visible');
+
+  document.getElementById('statTotal').textContent = photos.length;
+  document.getElementById('statDups').textContent  = '…';
+  document.getElementById('statKept').textContent  = '…';
+
+  setProgress(0, 'Computing SHA-256 hashes…');
+
+  // Hash every file
+  const hashed = [];
+  for (let i = 0; i < photos.length; i++) {
+    const hash = await sha256(photos[i]);
+    hashed.push({ file: photos[i], hash });
+    setProgress((i + 1) / photos.length * 80, `Hashing ${i+1} / ${photos.length}…`);
+    if (i % 10 === 0) await sleep(0);
+  }
+
+  setProgress(80, 'Finding exact duplicates…');
+  await sleep(0);
+
+  // Group by hash
+  const hashMap = new Map();
+  for (const item of hashed) {
+    if (!hashMap.has(item.hash)) hashMap.set(item.hash, []);
+    hashMap.get(item.hash).push(item);
+  }
+
+  const dupGroups = [];
+  for (const [, group] of hashMap) {
+    if (group.length > 1) {
+      dupGroups.push(group);
+      // Mark all but the first as duplicates
+      for (let k = 1; k < group.length; k++) {
+        const f = group[k].file;
+        toDelete.add(f.name + '|||' + f.size);
+      }
+    }
+  }
+
+  const totalDups = [...toDelete].length;
+  document.getElementById('statDups').textContent = totalDups;
+  document.getElementById('statKept').textContent = photos.length - totalDups;
+
+  setProgress(100, 'Done');
+  await sleep(150);
+  progressSection.classList.remove('visible');
+
+  if (dupGroups.length === 0) {
+    resultsSection.classList.add('visible');
+    groupsContainer.innerHTML = '<div class="empty-state">No exact duplicates found — your folder is already clean!</div>';
+  } else {
+    renderGroups(dupGroups);
+    resultsSection.classList.add('visible');
+  }
+
+  actionsBar.style.display = 'flex';
+}
+
+function renderGroups(groups) {
+  groupsContainer.innerHTML = '';
+
+  groups.forEach((group, gi) => {
+    const card   = document.createElement('div');
+    card.className = 'group-card';
+
+    const header = document.createElement('div');
+    header.className = 'group-header';
+    header.innerHTML = `<span class="group-badge">Group ${gi + 1}</span>
+      <span>${group.length} identical files · keeping first</span>`;
+    card.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.className = 'photos-grid';
+
+    group.forEach((item, k) => {
+      const key   = item.file.name + '|||' + item.file.size;
+      const isDel = toDelete.has(key);
+
+      const thumb    = document.createElement('div');
+      thumb.className = 'photo-thumb ' + (isDel ? 'deleted' : 'kept');
+
+      const img  = document.createElement('img');
+      // only try to preview actual renderable images
+      const ext  = item.file.name.split('.').pop().toLowerCase();
+      const renderable = ['jpg','jpeg','png','gif','webp','bmp','svg','avif','ico','jfif'].includes(ext);
+      if (renderable) {
+        img.src = URL.createObjectURL(item.file);
+        img.loading = 'lazy';
+      } else {
+        img.style.cssText = 'background:#1e1e20; width:100%; height:100%; display:block;';
+        img.alt = ext.toUpperCase();
+      }
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'photo-name';
+      nameEl.textContent = item.file.name;
+
+      const tag = document.createElement('div');
+      tag.className = 'tag';
+      tag.textContent = isDel ? 'del' : 'keep';
+
+      thumb.appendChild(img);
+      thumb.appendChild(nameEl);
+      thumb.appendChild(tag);
+      grid.appendChild(thumb);
+    });
+
+    card.appendChild(grid);
+    groupsContainer.appendChild(card);
+  });
+}
+
+// ── Download ──────────────────────────────────────────────────────────────
+
+downloadBtn.addEventListener('click', async () => {
+  downloadBtn.disabled     = true;
+  downloadBtn.textContent  = 'Zipping…';
+
+  const zip     = new JSZip();
+  const folder  = zip.folder('clean_photos');
+  const keepers = allPhotoFiles.filter(f => !toDelete.has(f.name + '|||' + f.size));
+
+  for (let i = 0; i < keepers.length; i++) {
+    const f       = keepers[i];
+    const buf     = await f.arrayBuffer();
+    const relPath = f.webkitRelativePath || f.name;
+    // Strip the root folder name, preserve sub-folder structure
+    const parts   = relPath.split('/');
+    parts.shift();
+    folder.file(parts.join('/') || f.name, buf);
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'clean_photos.zip';
+  a.click();
+  URL.revokeObjectURL(url);
+
+  downloadBtn.disabled    = false;
+  downloadBtn.textContent = 'Download clean folder (.zip)';
+});
+
+// ── Reset ─────────────────────────────────────────────────────────────────
+
+resetBtn.addEventListener('click', () => {
+  allPhotoFiles = [];
+  toDelete      = new Set();
+  groupsContainer.innerHTML = '';
+  resultsSection.classList.remove('visible');
+  actionsBar.style.display  = 'none';
+  statsRow.style.display    = 'none';
+  progressSection.classList.remove('visible');
+  folderInput.value   = '';
+  overlayInput.value  = '';
+});
+</script>
+</body>
+</html>
